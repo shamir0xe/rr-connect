@@ -1,0 +1,19 @@
+routers:
+  - "plum"
+  - "ploom"
+  - "plish"
+
+health-check:
+  interval-duration: 5s
+  timeout-duration: 2s
+  url: "icanhazip.com"
+  max-retries: 3
+  socks:
+    port: 1080
+    host: "localhost"
+
+config-switch:
+  placeholder: "__OUTBOUND_ROUTE__"
+  template-cfg: "config.template.json"
+  output-cfg: "config.json"
+  systemctl-service: "not-v2ray.service"

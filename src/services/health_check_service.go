@@ -1,0 +1,80 @@
+package services
+
+import (
+	"context"
+	"fmt"
+	"os/exec"
+	"sync"
+	"time"
+
+	"github.com/spf13/viper"
+)
+
+type HealthCheckInterface interface {
+	Run(context.Context, *sync.WaitGroup, chan<- bool) error
+}
+
+type healthCheckStruct struct {
+	intervalDuration time.Duration
+	timeoutDuration  time.Duration
+	healthCheckURL   string
+	socksHost        string
+	socksPort        int
+	counter          int
+	maxRetries       int
+}
+
+func NewHealthCheckService(cfg *viper.Viper) (HealthCheckInterface, error) {
+	cfg.SetEnvPrefix("health-check")
+	return &healthCheckStruct{
+		intervalDuration: cfg.GetDuration("interval-duration"),
+		timeoutDuration:  cfg.GetDuration("timeout-duration"),
+		healthCheckURL:   cfg.GetString("url"),
+		socksHost:        cfg.GetString("socks.host"),
+		socksPort:        cfg.GetInt("socks.port"),
+		maxRetries:       cfg.GetInt("max-retries"),
+	}, nil
+}
+
+func (hc healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, triggerChan chan<- bool) error {
+	wg.Add(1)
+	defer wg.Done()
+
+	var timer *time.Timer = time.NewTimer(10 * time.Millisecond)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-timer.C:
+			if !hc.checkConnectivity(ctx) {
+				triggerChan <- true
+			}
+		}
+		timer.Stop()
+		timer = time.NewTimer(hc.intervalDuration)
+	}
+}
+
+func (hc healthCheckStruct) checkConnectivity(ctx context.Context) bool {
+	timeoutCtx, cancel := context.WithTimeout(ctx, hc.timeoutDuration)
+	defer cancel()
+	cmd := exec.CommandContext(timeoutCtx,
+		"curl",
+		"--socks5-hostname", fmt.Sprintf("%s:%d", hc.socksHost, hc.socksPort),
+		hc.healthCheckURL,
+	)
+
+	if err := cmd.Run(); err == nil {
+		hc.counter = 0
+		return true
+	}
+	hc.counter++
+	if hc.counter < hc.maxRetries {
+		return true
+	}
+	// reaches max retries, trigger config switch
+	hc.counter = 0
+	return false
+}
