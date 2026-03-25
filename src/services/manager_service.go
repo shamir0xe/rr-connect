@@ -41,8 +41,10 @@ func (mgr *managerStruct) Run(ctx context.Context) error {
 	fmt.Println("Manager is running. Press Ctrl+C to stop.")
 	<-osSignalChan
 
+	fmt.Println("Interrupt signal received, killing processes")
 	cancel()
 
+	fmt.Println("Shutting down gracefully, waiting...")
 	wg.Wait()
 	return nil
 }

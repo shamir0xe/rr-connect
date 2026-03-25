@@ -22,13 +22,13 @@ type ConfigSwitchInterface interface {
 }
 
 func NewConfigSwitchService(cfg *viper.Viper, router RouterInterface) (ConfigSwitchInterface, error) {
-	cfg.SetEnvPrefix("config-switch")
+	sub := cfg.Sub("config-switch")
 	return &configSwitchStruct{
 		router:           router,
-		placeholder:      cfg.GetString("placeholder"),
-		templateCfg:      cfg.GetString("template-cfg"),
-		outputCfg:        cfg.GetString("output-cfg"),
-		systemctlService: cfg.GetString("systemctl-service"),
+		placeholder:      sub.GetString("placeholder"),
+		templateCfg:      sub.GetString("template-cfg"),
+		outputCfg:        sub.GetString("output-cfg"),
+		systemctlService: sub.GetString("systemctl-service"),
 	}, nil
 }
 
@@ -39,8 +39,10 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 	for {
 		select {
 		case <-ctx.Done():
+			fmt.Println("ConfigSwitch -> END")
 			return nil
 		case <-triggerChan:
+			fmt.Printf("ConfigSwitch -> creating new config [%s]\n", cs.router.Pick())
 			err := exec.Command(
 				"sed",
 				fmt.Sprintf("s|%s|%s|g", cs.placeholder, cs.router.Next()),
@@ -51,6 +53,7 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 				return err
 			}
 
+			fmt.Printf("ConfigSwitch -> restarting %s\n", cs.systemctlService)
 			err = exec.Command("systemctl", "restart", cs.systemctlService).Run()
 			if err != nil {
 				return err

@@ -25,14 +25,14 @@ type healthCheckStruct struct {
 }
 
 func NewHealthCheckService(cfg *viper.Viper) (HealthCheckInterface, error) {
-	cfg.SetEnvPrefix("health-check")
+	sub := cfg.Sub("health-check")
 	return &healthCheckStruct{
-		intervalDuration: cfg.GetDuration("interval-duration"),
-		timeoutDuration:  cfg.GetDuration("timeout-duration"),
-		healthCheckURL:   cfg.GetString("url"),
-		socksHost:        cfg.GetString("socks.host"),
-		socksPort:        cfg.GetInt("socks.port"),
-		maxRetries:       cfg.GetInt("max-retries"),
+		intervalDuration: sub.GetDuration("interval-duration"),
+		timeoutDuration:  sub.GetDuration("timeout-duration"),
+		healthCheckURL:   sub.GetString("url"),
+		socksHost:        sub.GetString("socks.host"),
+		socksPort:        sub.GetInt("socks.port"),
+		maxRetries:       sub.GetInt("max-retries"),
 	}, nil
 }
 
@@ -60,6 +60,9 @@ func (hc healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigger
 func (hc healthCheckStruct) checkConnectivity(ctx context.Context) bool {
 	timeoutCtx, cancel := context.WithTimeout(ctx, hc.timeoutDuration)
 	defer cancel()
+
+	fmt.Printf("health-check -> do\n")
+	fmt.Printf("health-check -> curl --socks5-hostname %s:%d %s\n", hc.socksHost, hc.socksPort, hc.healthCheckURL)
 	cmd := exec.CommandContext(timeoutCtx,
 		"curl",
 		"--socks5-hostname", fmt.Sprintf("%s:%d", hc.socksHost, hc.socksPort),
@@ -67,10 +70,12 @@ func (hc healthCheckStruct) checkConnectivity(ctx context.Context) bool {
 	)
 
 	if err := cmd.Run(); err == nil {
+		fmt.Printf("health-check -> YES\n")
 		hc.counter = 0
 		return true
 	}
 	hc.counter++
+	fmt.Printf("health-check -> NO (%d)\n", hc.counter)
 	if hc.counter < hc.maxRetries {
 		return true
 	}

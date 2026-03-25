@@ -1,9 +1,14 @@
 package services
 
-import "github.com/spf13/viper"
+import (
+	"fmt"
+
+	"github.com/spf13/viper"
+)
 
 type RouterInterface interface {
 	Next() string
+	Pick() string
 }
 
 type routerStruct struct {
@@ -12,18 +17,27 @@ type routerStruct struct {
 }
 
 func NewRouter(cfg *viper.Viper) (RouterInterface, error) {
+	routers := cfg.GetStringSlice("routers")
+	fmt.Println("Routers:", routers)
 	return &routerStruct{
-		routers: cfg.GetStringSlice("routers"),
+		routers: routers,
 		index:   0,
 	}, nil
 }
 
-func (r *routerStruct) Next() string {
+func (r *routerStruct) Pick() string {
 	if len(r.routers) == 0 {
 		return ""
 	}
-	router := r.routers[r.index]
-	r.index++
+	return r.routers[r.index]
+}
+
+func (r *routerStruct) update() {
 	r.index = (r.index + 1) % len(r.routers)
+}
+
+func (r *routerStruct) Next() string {
+	router := r.Pick()
+	r.update()
 	return router
 }
