@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"os/exec"
 	"sync"
 	"time"
@@ -33,10 +34,11 @@ func NewHealthCheckService(cfg *viper.Viper) (HealthCheckInterface, error) {
 		socksHost:        sub.GetString("socks.host"),
 		socksPort:        sub.GetInt("socks.port"),
 		maxRetries:       sub.GetInt("max-retries"),
+		counter:          0,
 	}, nil
 }
 
-func (hc healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, triggerChan chan<- bool) error {
+func (hc *healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, triggerChan chan<- bool) error {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -46,6 +48,7 @@ func (hc healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigger
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("health-check -> END")
 			return nil
 		case <-timer.C:
 			if !hc.checkConnectivity(ctx) {
@@ -57,12 +60,12 @@ func (hc healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigger
 	}
 }
 
-func (hc healthCheckStruct) checkConnectivity(ctx context.Context) bool {
+func (hc *healthCheckStruct) checkConnectivity(ctx context.Context) bool {
 	timeoutCtx, cancel := context.WithTimeout(ctx, hc.timeoutDuration)
 	defer cancel()
 
-	fmt.Printf("health-check -> do\n")
-	fmt.Printf("health-check -> curl --socks5-hostname %s:%d %s\n", hc.socksHost, hc.socksPort, hc.healthCheckURL)
+	log.Printf("health-check -> do\n")
+	log.Printf("health-check -> curl --socks5-hostname %s:%d %s\n", hc.socksHost, hc.socksPort, hc.healthCheckURL)
 	cmd := exec.CommandContext(timeoutCtx,
 		"curl",
 		"--socks5-hostname", fmt.Sprintf("%s:%d", hc.socksHost, hc.socksPort),
@@ -70,15 +73,17 @@ func (hc healthCheckStruct) checkConnectivity(ctx context.Context) bool {
 	)
 
 	if err := cmd.Run(); err == nil {
-		fmt.Printf("health-check -> YES\n")
+		log.Printf("health-check -> YES\n")
 		hc.counter = 0
 		return true
 	}
 	hc.counter++
-	fmt.Printf("health-check -> NO (%d)\n", hc.counter)
+	log.Printf("health-check -> NO (%d)\n", hc.counter)
 	if hc.counter < hc.maxRetries {
+		log.Println("lower than max-retries, continue")
 		return true
 	}
+	log.Println("reaches max retries, trigger config switch")
 	// reaches max retries, trigger config switch
 	hc.counter = 0
 	return false

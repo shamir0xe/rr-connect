@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/shamir0xe/rr-connect/src/dependencies"
@@ -37,7 +36,7 @@ func createContainer() (*dig.Container, error) {
 }
 
 func main() {
-	fmt.Println("Welcome to rr-connect!")
+	log.Println("Welcome to rr-connect!")
 	// so basically, it will be a infinite loop that checks the connectivity
 	// via curl command, if it works, reset the counter,
 	// if it fails, increase the counter by 1, if the counter reaches THRESHOLD,
@@ -46,9 +45,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create container: %v", err)
 	}
-	container.Invoke(func(mgr services.ManagerInterface) {
-		if err := mgr.Run(context.Background()); err != nil {
+	err = container.Invoke(func(mgr services.ManagerInterface) error {
+		err := mgr.Run(context.Background())
+		if err != nil {
 			log.Fatalf("Manager run failed: %v", err)
 		}
+		log.Println("yoyo")
+		return err
 	})
+	if err != nil {
+		panic(err)
+	}
 }

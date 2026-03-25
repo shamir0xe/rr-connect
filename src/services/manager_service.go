@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -33,18 +33,20 @@ func (mgr *managerStruct) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var triggerChan = make(chan bool)
 
+	log.Println("Creating goroutines...")
+
 	go mgr.cfgSwitchService.Run(ctx, &wg, triggerChan)
 	go mgr.healthCheckService.Run(ctx, &wg, triggerChan)
 
 	osSignalChan := make(chan os.Signal, 1)
 	signal.Notify(osSignalChan, os.Interrupt)
-	fmt.Println("Manager is running. Press Ctrl+C to stop.")
+	log.Println("Manager is running. Press Ctrl+C to stop.")
 	<-osSignalChan
 
-	fmt.Println("Interrupt signal received, killing processes")
+	log.Println("Interrupt signal received, killing processes")
 	cancel()
 
-	fmt.Println("Shutting down gracefully, waiting...")
+	log.Println("Shutting down gracefully, waiting...")
 	wg.Wait()
 	return nil
 }

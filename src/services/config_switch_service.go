@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -39,25 +41,41 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("ConfigSwitch -> END")
+			log.Println("ConfigSwitch -> END")
 			return nil
 		case <-triggerChan:
-			fmt.Printf("ConfigSwitch -> creating new config [%s]\n", cs.router.Pick())
-			err := exec.Command(
-				"sed",
-				fmt.Sprintf("s|%s|%s|g", cs.placeholder, cs.router.Next()),
-				"<", cs.templateCfg,
-				">", cs.outputCfg,
-			).Run()
+			err := cs.makeConfig()
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("ConfigSwitch -> restarting %s\n", cs.systemctlService)
+			log.Printf("ConfigSwitch -> restarting %s\n", cs.systemctlService)
 			err = exec.Command("systemctl", "restart", cs.systemctlService).Run()
 			if err != nil {
 				return err
 			}
 		}
 	}
+}
+
+func (cs *configSwitchStruct) makeConfig() error {
+	log.Printf("ConfigSwitch -> creating new config [%s]\n", cs.router.Pick())
+	input, err := os.Open(cs.templateCfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer input.Close()
+
+	output, err := os.Create(cs.outputCfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cmd := exec.Command(
+		"sed",
+		fmt.Sprintf("s|%s|%s|g", cs.placeholder, cs.router.Next()),
+	)
+	cmd.Stdin = input
+	cmd.Stdout = output
+	err = cmd.Run()
+	return err
 }

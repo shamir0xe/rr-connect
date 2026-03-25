@@ -1,7 +1,7 @@
 package services
 
 import (
-	"fmt"
+	"log"
 
 	"github.com/spf13/viper"
 )
@@ -18,7 +18,7 @@ type routerStruct struct {
 
 func NewRouter(cfg *viper.Viper) (RouterInterface, error) {
 	routers := cfg.GetStringSlice("routers")
-	fmt.Println("Routers:", routers)
+	log.Println("Routers:", routers)
 	return &routerStruct{
 		routers: routers,
 		index:   0,
