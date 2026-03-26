@@ -9,6 +9,7 @@ import (
 type RouterInterface interface {
 	Next() string
 	Pick() string
+	Previous() string
 }
 
 type routerStruct struct {
@@ -37,7 +38,13 @@ func (r *routerStruct) update() {
 }
 
 func (r *routerStruct) Next() string {
+	log.Printf("router ptr=%p index=%d", r, r.index)
 	router := r.Pick()
 	r.update()
 	return router
+}
+
+func (r *routerStruct) Previous() string {
+	pre := (r.index - 1 + len(r.routers)) % len(r.routers)
+	return r.routers[pre]
 }
