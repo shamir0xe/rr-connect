@@ -73,12 +73,12 @@ func (hc *healthCheckStruct) checkConnectivity(ctx context.Context) bool {
 	)
 
 	if err := cmd.Run(); err == nil {
-		log.Printf("health-check -> YES\n")
+		log.Printf("health-check -> GOOD!\n")
 		hc.counter = 0
 		return true
 	}
 	hc.counter++
-	log.Printf("health-check -> NO (%d)\n", hc.counter)
+	log.Printf("health-check -> BAD x( (%d)\n", hc.counter)
 	if hc.counter < hc.maxRetries {
 		log.Println("lower than max-retries, continue")
 		return true

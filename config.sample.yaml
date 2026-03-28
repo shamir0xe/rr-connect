@@ -16,4 +16,27 @@ config-switch:
   placeholder: "__OUTBOUND_ROUTE__"
   template-cfg: "config.template.json"
   output-cfg: "config.json"
-  systemctl-service: "not-v2ray.service"
+  post-process:
+    enabled: true
+    help: "Restarting xray service"
+    command: "systemctl"
+    args:
+      - "restart"
+      - "not-v2ray.service"
+  notify:
+    enabled: false
+    help: "Notify the changes through telegram"
+    command: "curl"
+    delay: 2s
+    timeout: 10s
+    args:
+      - "--socks5-hostname"
+      - "127.0.0.1:1080"
+      - "-vs"
+      - "-X"
+      - "POST"
+      - "-H"
+      - "Content-Type: application/json"
+      - "-d"
+      - '{"chat_id": "<CHAT_ID>", "text": "Switched to the __OUTBOUND_ROUTE__"}'
+      - "https://api.telegram.org/bot<BOT_ID>/sendMessage"

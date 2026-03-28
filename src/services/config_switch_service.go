@@ -14,14 +14,9 @@ import (
 )
 
 type configSwitchStruct struct {
-	templateCfg      string
-	outputCfg        string
-	placeholder      string
-	router           RouterInterface
-	systemctlService string
-	notifyEnabled    bool
-	notifyCommand    string
-	notifyArgs       []string
+	placeholder string
+	router      RouterInterface
+	cfg         *viper.Viper
 }
 
 type ConfigSwitchInterface interface {
@@ -31,14 +26,9 @@ type ConfigSwitchInterface interface {
 func NewConfigSwitchService(cfg *viper.Viper, router RouterInterface) (ConfigSwitchInterface, error) {
 	sub := cfg.Sub("config-switch")
 	return &configSwitchStruct{
-		router:           router,
-		placeholder:      sub.GetString("placeholder"),
-		templateCfg:      sub.GetString("template-cfg"),
-		outputCfg:        sub.GetString("output-cfg"),
-		systemctlService: sub.GetString("systemctl-service"),
-		notifyEnabled:    sub.GetBool("notify.enabled"),
-		notifyCommand:    sub.GetString("notify.command"),
-		notifyArgs:       sub.GetStringSlice("notify.args"),
+		router:      router,
+		placeholder: sub.GetString("placeholder"),
+		cfg:         cfg,
 	}, nil
 }
 
@@ -58,7 +48,7 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 				return err
 			}
 
-			err = cs.restartService()
+			err = cs.postProcess()
 			if err != nil {
 				return err
 			}
@@ -69,14 +59,17 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 }
 
 func (cs *configSwitchStruct) makeConfig() error {
+	templateCfg := cs.cfg.GetString("config-switch.template-cfg")
+	outputCfg := cs.cfg.GetString("config-switch.output-cfg")
+
 	log.Printf("ConfigSwitch -> creating new config [%s]\n", cs.router.Pick())
-	input, err := os.Open(cs.templateCfg)
+	input, err := os.Open(templateCfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer input.Close()
 
-	output, err := os.Create(cs.outputCfg)
+	output, err := os.Create(outputCfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -90,26 +83,44 @@ func (cs *configSwitchStruct) makeConfig() error {
 	return err
 }
 
-func (cs *configSwitchStruct) restartService() error {
-	log.Printf("ConfigSwitch -> restarting %s\n", cs.systemctlService)
-	err := exec.Command("systemctl", "restart", cs.systemctlService).Run()
+func (cs *configSwitchStruct) postProcess() error {
+	sub := cs.cfg.Sub("config-switch.post-process")
+
+	if !sub.GetBool("enabled") {
+		return nil
+	}
+
+	command := sub.GetString("command")
+	args := sub.GetStringSlice("args")
+	help := sub.GetString("help")
+
+	log.Printf("ConfigSwitch -> post-process %s\n", help)
+
+	err := exec.Command(command, args...).Run()
 	return err
 }
 
 func (cs *configSwitchStruct) notify(ctx context.Context) error {
-	if !cs.notifyEnabled {
+	sub := cs.cfg.Sub("config-switch.notify")
+
+	if !sub.GetBool("enabled") {
 		return nil
 	}
 
-	timer := time.NewTimer(2 * time.Second)
-	<-timer.C
-	log.Printf("ConfigSwitch -> executing notify command after 2 seconds delay\n")
+	command := sub.GetString("command")
+	notifyArgs := sub.GetStringSlice("args")
+	delay := sub.GetDuration("delay")
+	timeout := sub.GetDuration("timeout")
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	log.Printf("ConfigSwitch -> executing notify command after %s delay\n", delay)
+	timer := time.NewTimer(delay)
+	<-timer.C
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var args []string = make([]string, len(cs.notifyArgs))
-	for i, arg := range cs.notifyArgs {
+	var args []string = make([]string, len(notifyArgs))
+	for i, arg := range notifyArgs {
 		if strings.Contains(arg, cs.placeholder) {
 			args[i] = strings.ReplaceAll(arg, cs.placeholder, cs.router.Previous())
 		} else {
@@ -117,15 +128,11 @@ func (cs *configSwitchStruct) notify(ctx context.Context) error {
 		}
 	}
 
-	log.Printf("%s ", cs.notifyCommand)
-	for _, arg := range args {
-		log.Printf("%s ", arg)
-	}
-	log.Println()
-
-	err := exec.CommandContext(timeoutCtx, cs.notifyCommand, args...).Run()
+	err := exec.CommandContext(timeoutCtx, command, args...).Run()
 	if err != nil {
 		log.Printf("ConfigSwitch -> notify command failed: %v\n", err)
+	} else {
+		log.Printf("ConfigSwitch -> notified successfully [%s]!\n", cs.router.Previous())
 	}
 
 	return err
