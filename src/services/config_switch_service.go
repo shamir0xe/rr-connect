@@ -28,7 +28,7 @@ func NewConfigSwitchService(cfg *viper.Viper, router RouterInterface) (ConfigSwi
 	return &configSwitchStruct{
 		router:      router,
 		placeholder: sub.GetString("placeholder"),
-		cfg:         cfg,
+		cfg:         sub,
 	}, nil
 }
 
@@ -59,8 +59,8 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 }
 
 func (cs *configSwitchStruct) makeConfig() error {
-	templateCfg := cs.cfg.GetString("config-switch.template-cfg")
-	outputCfg := cs.cfg.GetString("config-switch.output-cfg")
+	templateCfg := cs.cfg.GetString("template-cfg")
+	outputCfg := cs.cfg.GetString("output-cfg")
 
 	log.Printf("ConfigSwitch -> creating new config [%s]\n", cs.router.Pick())
 	input, err := os.Open(templateCfg)
@@ -84,7 +84,7 @@ func (cs *configSwitchStruct) makeConfig() error {
 }
 
 func (cs *configSwitchStruct) postProcess() error {
-	sub := cs.cfg.Sub("config-switch.post-process")
+	sub := cs.cfg.Sub("post-process")
 
 	if !sub.GetBool("enabled") {
 		return nil
@@ -101,7 +101,7 @@ func (cs *configSwitchStruct) postProcess() error {
 }
 
 func (cs *configSwitchStruct) notify(ctx context.Context) error {
-	sub := cs.cfg.Sub("config-switch.notify")
+	sub := cs.cfg.Sub("notify")
 
 	if !sub.GetBool("enabled") {
 		return nil
