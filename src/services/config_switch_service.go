@@ -39,7 +39,7 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("ConfigSwitch -> END")
+			log.Println("config-switch -> END")
 			return nil
 		case <-triggerChan:
 
@@ -62,7 +62,7 @@ func (cs *configSwitchStruct) makeConfig() error {
 	templateCfg := cs.cfg.GetString("template-cfg")
 	outputCfg := cs.cfg.GetString("output-cfg")
 
-	log.Printf("ConfigSwitch -> creating new config [%s]\n", cs.router.Pick())
+	log.Printf("config-switch -> creating new config [%s]\n", cs.router.Pick())
 	input, err := os.Open(templateCfg)
 	if err != nil {
 		log.Fatal(err)
@@ -94,7 +94,7 @@ func (cs *configSwitchStruct) postProcess() error {
 	args := sub.GetStringSlice("args")
 	help := sub.GetString("help")
 
-	log.Printf("ConfigSwitch -> post-process %s\n", help)
+	log.Printf("config-switch -> post-process %s\n", help)
 
 	err := exec.Command(command, args...).Run()
 	return err
@@ -112,7 +112,7 @@ func (cs *configSwitchStruct) notify(ctx context.Context) error {
 	delay := sub.GetDuration("delay")
 	timeout := sub.GetDuration("timeout")
 
-	log.Printf("ConfigSwitch -> executing notify command after %s delay\n", delay)
+	log.Printf("config-switch -> executing notify command after %s delay\n", delay)
 	timer := time.NewTimer(delay)
 	<-timer.C
 
@@ -130,9 +130,9 @@ func (cs *configSwitchStruct) notify(ctx context.Context) error {
 
 	err := exec.CommandContext(timeoutCtx, command, args...).Run()
 	if err != nil {
-		log.Printf("ConfigSwitch -> notify command failed: %v\n", err)
+		log.Printf("config-switch -> notify command failed: %v\n", err)
 	} else {
-		log.Printf("ConfigSwitch -> notified successfully [%s]!\n", cs.router.Previous())
+		log.Printf("config-switch -> notified successfully [%s]!\n", cs.router.Previous())
 	}
 
 	return err
