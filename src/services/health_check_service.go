@@ -52,7 +52,12 @@ func (hc *healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigge
 			return nil
 		case <-timer.C:
 			if !hc.checkConnectivity(ctx) {
-				triggerChan <- true
+				select {
+				case triggerChan <- true:
+					log.Println("health-check -> Trigger signal sent!")
+				default:
+					log.Println("heatl-check -> Trigger skipped, already pending.")
+				}
 			}
 		}
 		timer.Stop()

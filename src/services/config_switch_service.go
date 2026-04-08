@@ -43,14 +43,15 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 			return nil
 		case <-triggerChan:
 
-			err := cs.makeConfig()
+			err := cs.makeConfig(ctx)
 			if err != nil {
-				return err
+				log.Printf("config-switch -> make-config -> error: %v", err)
+				continue
 			}
 
-			err = cs.postProcess()
+			err = cs.postProcess(ctx)
 			if err != nil {
-				return err
+				log.Printf("config-switch -> post-process -> error: %v", err)
 			}
 
 			go cs.notify(ctx)
@@ -58,7 +59,7 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 	}
 }
 
-func (cs *configSwitchStruct) makeConfig() error {
+func (cs *configSwitchStruct) makeConfig(ctx context.Context) error {
 	templateCfg := cs.cfg.GetString("template-cfg")
 	outputCfg := cs.cfg.GetString("output-cfg")
 
@@ -73,17 +74,24 @@ func (cs *configSwitchStruct) makeConfig() error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cmd := exec.Command(
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		timeoutCtx,
 		"sed",
 		fmt.Sprintf("s|%s|%s|g", cs.placeholder, cs.router.Next()),
 	)
 	cmd.Stdin = input
 	cmd.Stdout = output
+
 	err = cmd.Run()
+
 	return err
 }
 
-func (cs *configSwitchStruct) postProcess() error {
+func (cs *configSwitchStruct) postProcess(ctx context.Context) error {
 	sub := cs.cfg.Sub("post-process")
 
 	if !sub.GetBool("enabled") {
@@ -93,10 +101,17 @@ func (cs *configSwitchStruct) postProcess() error {
 	command := sub.GetString("command")
 	args := sub.GetStringSlice("args")
 	help := sub.GetString("help")
+	timeout := sub.GetDuration("timeout")
 
 	log.Printf("config-switch -> post-process %s\n", help)
 
-	err := exec.Command(command, args...).Run()
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(timeoutCtx, command, args...)
+	err := cmd.Run()
+
+	log.Println("config-switch -> post-process DONE")
 	return err
 }
 
