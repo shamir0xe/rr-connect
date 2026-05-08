@@ -23,11 +23,12 @@ type healthCheckStruct struct {
 	socksPort        int
 	counter          int
 	maxRetries       int
+	doCheck          func(ctx context.Context) bool
 }
 
 func NewHealthCheckService(cfg *viper.Viper) (HealthCheckInterface, error) {
 	sub := cfg.Sub("health-check")
-	return &healthCheckStruct{
+	hc := &healthCheckStruct{
 		intervalDuration: sub.GetDuration("interval-duration"),
 		timeoutDuration:  sub.GetDuration("timeout-duration"),
 		healthCheckURL:   sub.GetString("url"),
@@ -35,7 +36,9 @@ func NewHealthCheckService(cfg *viper.Viper) (HealthCheckInterface, error) {
 		socksPort:        sub.GetInt("socks.port"),
 		maxRetries:       sub.GetInt("max-retries"),
 		counter:          0,
-	}, nil
+	}
+	hc.doCheck = hc.curlCheck
+	return hc, nil
 }
 
 func (hc *healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, triggerChan chan<- bool) error {
@@ -66,18 +69,8 @@ func (hc *healthCheckStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigge
 }
 
 func (hc *healthCheckStruct) checkConnectivity(ctx context.Context) bool {
-	timeoutCtx, cancel := context.WithTimeout(ctx, hc.timeoutDuration)
-	defer cancel()
-
 	log.Printf("health-check -> do\n")
-	log.Printf("health-check -> curl --socks5-hostname %s:%d %s\n", hc.socksHost, hc.socksPort, hc.healthCheckURL)
-	cmd := exec.CommandContext(timeoutCtx,
-		"curl",
-		"--socks5-hostname", fmt.Sprintf("%s:%d", hc.socksHost, hc.socksPort),
-		hc.healthCheckURL,
-	)
-
-	if err := cmd.Run(); err == nil {
+	if hc.doCheck(ctx) {
 		log.Printf("health-check -> GOOD!\n")
 		hc.counter = 0
 		return true
@@ -89,7 +82,19 @@ func (hc *healthCheckStruct) checkConnectivity(ctx context.Context) bool {
 		return true
 	}
 	log.Println("reaches max retries, trigger config switch")
-	// reaches max retries, trigger config switch
 	hc.counter = 0
 	return false
+}
+
+func (hc *healthCheckStruct) curlCheck(ctx context.Context) bool {
+	timeoutCtx, cancel := context.WithTimeout(ctx, hc.timeoutDuration)
+	defer cancel()
+
+	log.Printf("health-check -> curl --socks5-hostname %s:%d %s\n", hc.socksHost, hc.socksPort, hc.healthCheckURL)
+	cmd := exec.CommandContext(timeoutCtx,
+		"curl",
+		"--socks5-hostname", fmt.Sprintf("%s:%d", hc.socksHost, hc.socksPort),
+		hc.healthCheckURL,
+	)
+	return cmd.Run() == nil
 }

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -17,6 +16,7 @@ type configSwitchStruct struct {
 	placeholder string
 	router      RouterInterface
 	cfg         *viper.Viper
+	runCmd      func(ctx context.Context, name string, args ...string) *exec.Cmd
 }
 
 type ConfigSwitchInterface interface {
@@ -29,6 +29,7 @@ func NewConfigSwitchService(cfg *viper.Viper, router RouterInterface) (ConfigSwi
 		router:      router,
 		placeholder: sub.GetString("placeholder"),
 		cfg:         sub,
+		runCmd:      exec.CommandContext,
 	}, nil
 }
 
@@ -59,38 +60,25 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 	}
 }
 
-func (cs *configSwitchStruct) makeConfig(ctx context.Context) (string, error) {
+func (cs *configSwitchStruct) makeConfig(_ context.Context) (string, error) {
 	templateCfg := cs.cfg.GetString("template-cfg")
 	outputCfg := cs.cfg.GetString("output-cfg")
 
 	selectedRouter := cs.router.Next()
 	log.Printf("config-switch -> creating new config [%s]\n", selectedRouter)
-	input, err := os.Open(templateCfg)
+
+	content, err := os.ReadFile(templateCfg)
 	if err != nil {
 		return "", err
 	}
-	defer input.Close()
 
-	output, err := os.Create(outputCfg)
-	if err != nil {
+	replaced := strings.ReplaceAll(string(content), cs.placeholder, selectedRouter)
+
+	if err := os.WriteFile(outputCfg, []byte(replaced), 0644); err != nil {
 		return "", err
 	}
-	defer output.Close()
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(
-		timeoutCtx,
-		"sed",
-		fmt.Sprintf("s|%s|%s|g", cs.placeholder, selectedRouter),
-	)
-	cmd.Stdin = input
-	cmd.Stdout = output
-
-	err = cmd.Run()
-
-	return selectedRouter, err
+	return selectedRouter, nil
 }
 
 func (cs *configSwitchStruct) postProcess(ctx context.Context) error {
@@ -110,7 +98,7 @@ func (cs *configSwitchStruct) postProcess(ctx context.Context) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(timeoutCtx, command, args...)
+	cmd := cs.runCmd(timeoutCtx, command, args...)
 	err := cmd.Run()
 
 	log.Println("config-switch -> post-process DONE")
@@ -145,7 +133,7 @@ func (cs *configSwitchStruct) notify(ctx context.Context, routerName string) err
 		}
 	}
 
-	err := exec.CommandContext(timeoutCtx, command, args...).Run()
+	err := cs.runCmd(timeoutCtx, command, args...).Run()
 	if err != nil {
 		log.Printf("config-switch -> notify command failed: %v\n", err)
 	} else {
