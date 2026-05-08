@@ -67,13 +67,13 @@ func (cs *configSwitchStruct) makeConfig(ctx context.Context) (string, error) {
 	log.Printf("config-switch -> creating new config [%s]\n", selectedRouter)
 	input, err := os.Open(templateCfg)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 	defer input.Close()
 
 	output, err := os.Create(outputCfg)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
