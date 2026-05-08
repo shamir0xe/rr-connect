@@ -20,6 +20,7 @@ config-switch:
     enabled: true
     help: "Restarting xray service"
     command: "systemctl"
+    timeout: 20s
     args:
       - "restart"
       - "not-v2ray.service"
