@@ -75,6 +75,7 @@ func (cs *configSwitchStruct) makeConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer output.Close()
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
