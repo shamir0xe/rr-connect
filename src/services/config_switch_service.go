@@ -43,7 +43,7 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 			return nil
 		case <-triggerChan:
 
-			err := cs.makeConfig(ctx)
+			routerName, err := cs.makeConfig(ctx)
 			if err != nil {
 				log.Printf("config-switch -> make-config -> error: %v", err)
 				continue
@@ -54,16 +54,17 @@ func (cs *configSwitchStruct) Run(ctx context.Context, wg *sync.WaitGroup, trigg
 				log.Printf("config-switch -> post-process -> error: %v", err)
 			}
 
-			go cs.notify(ctx)
+			go cs.notify(ctx, routerName)
 		}
 	}
 }
 
-func (cs *configSwitchStruct) makeConfig(ctx context.Context) error {
+func (cs *configSwitchStruct) makeConfig(ctx context.Context) (string, error) {
 	templateCfg := cs.cfg.GetString("template-cfg")
 	outputCfg := cs.cfg.GetString("output-cfg")
 
-	log.Printf("config-switch -> creating new config [%s]\n", cs.router.Pick())
+	selectedRouter := cs.router.Next()
+	log.Printf("config-switch -> creating new config [%s]\n", selectedRouter)
 	input, err := os.Open(templateCfg)
 	if err != nil {
 		log.Fatal(err)
@@ -81,14 +82,14 @@ func (cs *configSwitchStruct) makeConfig(ctx context.Context) error {
 	cmd := exec.CommandContext(
 		timeoutCtx,
 		"sed",
-		fmt.Sprintf("s|%s|%s|g", cs.placeholder, cs.router.Next()),
+		fmt.Sprintf("s|%s|%s|g", cs.placeholder, selectedRouter),
 	)
 	cmd.Stdin = input
 	cmd.Stdout = output
 
 	err = cmd.Run()
 
-	return err
+	return selectedRouter, err
 }
 
 func (cs *configSwitchStruct) postProcess(ctx context.Context) error {
@@ -115,7 +116,7 @@ func (cs *configSwitchStruct) postProcess(ctx context.Context) error {
 	return err
 }
 
-func (cs *configSwitchStruct) notify(ctx context.Context) error {
+func (cs *configSwitchStruct) notify(ctx context.Context, routerName string) error {
 	sub := cs.cfg.Sub("notify")
 
 	if !sub.GetBool("enabled") {
@@ -137,7 +138,7 @@ func (cs *configSwitchStruct) notify(ctx context.Context) error {
 	var args []string = make([]string, len(notifyArgs))
 	for i, arg := range notifyArgs {
 		if strings.Contains(arg, cs.placeholder) {
-			args[i] = strings.ReplaceAll(arg, cs.placeholder, cs.router.Previous())
+			args[i] = strings.ReplaceAll(arg, cs.placeholder, routerName)
 		} else {
 			args[i] = arg
 		}
@@ -147,7 +148,7 @@ func (cs *configSwitchStruct) notify(ctx context.Context) error {
 	if err != nil {
 		log.Printf("config-switch -> notify command failed: %v\n", err)
 	} else {
-		log.Printf("config-switch -> notified successfully [%s]!\n", cs.router.Previous())
+		log.Printf("config-switch -> notified successfully [%s]!\n", routerName)
 	}
 
 	return err
