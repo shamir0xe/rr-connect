@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,7 +14,7 @@ import (
 func newTestConfigSwitch(t *testing.T, placeholder, templatePath, outputPath string, routers []string) *configSwitchStruct {
 	t.Helper()
 	v := viper.New()
-	v.Set("config-switch.placeholder", placeholder)
+	v.Set("config-switch.placeholders.router", placeholder)
 	v.Set("config-switch.template-cfg", templatePath)
 	v.Set("config-switch.output-cfg", outputPath)
 	v.Set("config-switch.post-process.enabled", false)
@@ -92,5 +93,85 @@ func TestMakeConfigMissingTemplateReturnsError(t *testing.T) {
 	_, err := cs.makeConfig(context.Background())
 	if err == nil {
 		t.Error("expected error for missing template file, got nil")
+	}
+}
+
+// newTestNotify builds a config-switch service wired for notify tests, with a
+// runCmd that records the args it is invoked with into *captured.
+func newTestNotify(t *testing.T, extraPath string, args []string, captured *[]string) *configSwitchStruct {
+	t.Helper()
+	v := viper.New()
+	v.Set("config-switch.placeholders.router", "__ROUTE__")
+	v.Set("config-switch.placeholders.extra", "__EXTRA__")
+	v.Set("config-switch.notify.enabled", true)
+	v.Set("config-switch.notify.command", "true")
+	v.Set("config-switch.notify.delay", "0s")
+	v.Set("config-switch.notify.timeout", "5s")
+	v.Set("config-switch.notify.extra-path", extraPath)
+	v.Set("config-switch.notify.args", args)
+
+	router := &routerStruct{routers: []string{"router-A"}, index: 0}
+	svc, err := NewConfigSwitchService(v, router)
+	if err != nil {
+		t.Fatalf("NewConfigSwitchService: %v", err)
+	}
+	cs := svc.(*configSwitchStruct)
+	cs.runCmd = func(ctx context.Context, name string, cmdArgs ...string) *exec.Cmd {
+		*captured = cmdArgs
+		return exec.Command("true")
+	}
+	return cs
+}
+
+func TestNotifyReplacesExtraFromFile(t *testing.T) {
+	dir := t.TempDir()
+	extraPath := filepath.Join(dir, "extra")
+	// trailing whitespace must be trimmed
+	if err := os.WriteFile(extraPath, []byte("EXTRA_VALUE\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var captured []string
+	cs := newTestNotify(t, extraPath, []string{"-d", "route=__ROUTE__ extra=__EXTRA__"}, &captured)
+
+	if err := cs.notify(context.Background(), "router-A"); err != nil {
+		t.Fatalf("notify: %v", err)
+	}
+
+	want := "route=router-A extra=EXTRA_VALUE"
+	if captured[1] != want {
+		t.Errorf("arg = %q, want %q", captured[1], want)
+	}
+}
+
+func TestNotifyLeavesExtraPlaceholderWhenFileMissing(t *testing.T) {
+	dir := t.TempDir()
+	missingPath := filepath.Join(dir, "does-not-exist")
+
+	var captured []string
+	cs := newTestNotify(t, missingPath, []string{"-d", "route=__ROUTE__ extra=__EXTRA__"}, &captured)
+
+	if err := cs.notify(context.Background(), "router-A"); err != nil {
+		t.Fatalf("notify: %v", err)
+	}
+
+	// router is still substituted; extra placeholder is left untouched
+	want := "route=router-A extra=__EXTRA__"
+	if captured[1] != want {
+		t.Errorf("arg = %q, want %q", captured[1], want)
+	}
+}
+
+func TestNotifyEmptyExtraPathLeavesPlaceholder(t *testing.T) {
+	var captured []string
+	cs := newTestNotify(t, "", []string{"-d", "extra=__EXTRA__"}, &captured)
+
+	if err := cs.notify(context.Background(), "router-A"); err != nil {
+		t.Fatalf("notify: %v", err)
+	}
+
+	want := "extra=__EXTRA__"
+	if captured[1] != want {
+		t.Errorf("arg = %q, want %q", captured[1], want)
 	}
 }

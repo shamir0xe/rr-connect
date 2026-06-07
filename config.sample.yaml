@@ -13,7 +13,9 @@ health-check:
     host: "localhost"
 
 config-switch:
-  placeholder: "__OUTBOUND_ROUTE__"
+  placeholders:
+    router: "__OUTBOUND_ROUTE__"
+    extra: "__EXTRA__"
   template-cfg: "config.template.json"
   output-cfg: "config.json"
   post-process:
@@ -30,6 +32,7 @@ config-switch:
     command: "curl"
     delay: 2s
     timeout: 10s
+    extra-path: "/run/rr-extra"
     args:
       - "--socks5-hostname"
       - "127.0.0.1:1080"
@@ -39,5 +42,5 @@ config-switch:
       - "-H"
       - "Content-Type: application/json"
       - "-d"
-      - '{"chat_id": "<CHAT_ID>", "text": "Switched to the __OUTBOUND_ROUTE__"}'
+      - '{"chat_id": "<CHAT_ID>", "text": "Switched to the __OUTBOUND_ROUTE__, __EXTRA__"}'
       - "https://api.telegram.org/bot<BOT_ID>/sendMessage"

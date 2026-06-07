@@ -12,11 +12,16 @@ import (
 	"github.com/spf13/viper"
 )
 
+type Placeholders struct {
+	extra  string
+	router string
+}
+
 type configSwitchStruct struct {
-	placeholder string
-	router      RouterInterface
-	cfg         *viper.Viper
-	runCmd      func(ctx context.Context, name string, args ...string) *exec.Cmd
+	router       RouterInterface
+	cfg          *viper.Viper
+	runCmd       func(ctx context.Context, name string, args ...string) *exec.Cmd
+	placeholders *Placeholders
 }
 
 type ConfigSwitchInterface interface {
@@ -26,10 +31,13 @@ type ConfigSwitchInterface interface {
 func NewConfigSwitchService(cfg *viper.Viper, router RouterInterface) (ConfigSwitchInterface, error) {
 	sub := cfg.Sub("config-switch")
 	return &configSwitchStruct{
-		router:      router,
-		placeholder: sub.GetString("placeholder"),
-		cfg:         sub,
-		runCmd:      exec.CommandContext,
+		router: router,
+		placeholders: &Placeholders{
+			router: sub.GetString("placeholders.router"),
+			extra:  sub.GetString("placeholders.extra"),
+		},
+		cfg:    sub,
+		runCmd: exec.CommandContext,
 	}, nil
 }
 
@@ -72,7 +80,7 @@ func (cs *configSwitchStruct) makeConfig(_ context.Context) (string, error) {
 		return "", err
 	}
 
-	replaced := strings.ReplaceAll(string(content), cs.placeholder, selectedRouter)
+	replaced := strings.ReplaceAll(string(content), cs.placeholders.router, selectedRouter)
 
 	if err := os.WriteFile(outputCfg, []byte(replaced), 0644); err != nil {
 		return "", err
@@ -116,6 +124,19 @@ func (cs *configSwitchStruct) notify(ctx context.Context, routerName string) err
 	notifyArgs := sub.GetStringSlice("args")
 	delay := sub.GetDuration("delay")
 	timeout := sub.GetDuration("timeout")
+	extraPath := sub.GetString("extra-path")
+
+	extraResult := ""
+	if extraPath != "" {
+		extraFile, err := os.ReadFile(extraPath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				log.Printf("config-switch -> failed to read extra-path %q: %v\n", extraPath, err)
+			}
+		} else {
+			extraResult = strings.TrimSpace(string(extraFile))
+		}
+	}
 
 	log.Printf("config-switch -> executing notify command after %s delay\n", delay)
 	timer := time.NewTimer(delay)
@@ -126,10 +147,12 @@ func (cs *configSwitchStruct) notify(ctx context.Context, routerName string) err
 
 	var args []string = make([]string, len(notifyArgs))
 	for i, arg := range notifyArgs {
-		if strings.Contains(arg, cs.placeholder) {
-			args[i] = strings.ReplaceAll(arg, cs.placeholder, routerName)
-		} else {
-			args[i] = arg
+		args[i] = arg
+		if strings.Contains(args[i], cs.placeholders.router) {
+			args[i] = strings.ReplaceAll(args[i], cs.placeholders.router, routerName)
+		}
+		if extraResult != "" && strings.Contains(args[i], cs.placeholders.extra) {
+			args[i] = strings.ReplaceAll(args[i], cs.placeholders.extra, extraResult)
 		}
 	}
 
